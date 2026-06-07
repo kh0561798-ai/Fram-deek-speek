@@ -1,0 +1,249 @@
+-- Roblox Blox Fruits Oto Farm Scripti (palofsc)
+-- UI, Tween Teleport, Kill Aura, Mob Çekme (Bring Mod), Fast Attack (Auto Click)
+-- Yeni farm alanı: Ichan (Ichinose) eklendi
+-- Yorumlar Türkçe, teknik, kesinlikle virtual user kullanılmaz
+
+-- Kütüphaneler
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- UI Oluşturma
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AbsFarmUI"
+ScreenGui.Parent = game.CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 220, 0, 300)
+MainFrame.Position = UDim2.new(0, 100, 0, 100)
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Title.BorderSizePixel = 0
+Title.Text = "Abs Studio Oto Farm + Fast Attack"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 16
+Title.Parent = MainFrame
+
+-- Değişkenler
+local autoFarm = false
+local killAura = false
+local bringMobs = false
+local fastAttack = false
+local selectedFarm = "Cake (Pasta Adası)"
+
+-- Çiftlik noktaları (CFrame pozisyonları) - yeni Ichan alanı eklendi
+local farmPositions = {
+    ["Cake (Pasta Adası)"] = CFrame.new(-2660, 73, -3320),
+    ["Bone (Kemik Kalesi)"] = CFrame.new(-7100, 30, -3100),
+    ["Kara Kale (Castle of Darkness)"] = CFrame.new(-5550, 60, -3450),
+    ["Iskelet Kral"] = CFrame.new(-6800, 25, -3200),
+    ["Ichan (Ichinose Bölgesi)"] = CFrame.new(-4200, 85, -3700)  -- Örnek koordinat, isteğe bağlı değiştir
+}
+
+-- Düşme menüsü
+local DropDown = Instance.new("TextButton")
+DropDown.Size = UDim2.new(1, -20, 0, 25)
+DropDown.Position = UDim2.new(0, 10, 0, 40)
+DropDown.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+DropDown.Text = selectedFarm
+DropDown.TextColor3 = Color3.fromRGB(255, 255, 255)
+DropDown.Font = Enum.Font.SourceSans
+DropDown.TextSize = 14
+DropDown.Parent = MainFrame
+
+local DropList = Instance.new("Frame")
+DropList.Size = UDim2.new(1, -20, 0, 100)
+DropList.Position = UDim2.new(0, 10, 0, 65)
+DropList.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+DropList.BorderSizePixel = 0
+DropList.Visible = false
+DropList.Parent = MainFrame
+
+local yOffset = 0
+for name, _ in pairs(farmPositions) do
+    local option = Instance.new("TextButton")
+    option.Size = UDim2.new(1, 0, 0, 20)
+    option.Position = UDim2.new(0, 0, 0, yOffset)
+    option.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    option.BorderSizePixel = 0
+    option.Text = name
+    option.TextColor3 = Color3.fromRGB(255, 255, 255)
+    option.Font = Enum.Font.SourceSans
+    option.TextSize = 12
+    option.Parent = DropList
+    option.MouseButton1Click:Connect(function()
+        selectedFarm = name
+        DropDown.Text = name
+        DropList.Visible = false
+    end)
+    yOffset = yOffset + 20
+end
+DropList.Size = UDim2.new(1, -20, 0, yOffset)
+
+DropDown.MouseButton1Click:Connect(function()
+    DropList.Visible = not DropList.Visible
+end)
+
+-- Toggle yardımcı fonksiyonu
+local function createToggle(name, posY, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.Text = name .. ": OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    btn.Parent = MainFrame
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = name .. ": " .. (state and "ON" or "OFF")
+        btn.BackgroundColor3 = state and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(50, 50, 50)
+        if callback then callback(state) end
+    end)
+    return btn
+end
+
+createToggle("Auto Farm", 180, function(val) autoFarm = val end)
+createToggle("Kill Aura", 215, function(val) killAura = val end)
+createToggle("Bring Mobs", 250, function(val) bringMobs = val end)
+createToggle("Fast Attack (Auto Click)", 285, function(val) fastAttack = val end)
+
+-- Yardımcı fonksiyon: karakter al
+local function getChar()
+    return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+end
+
+-- Teleport (Tween)
+local function tweenToCFrame(cf)
+    local char = getChar()
+    local root = char:WaitForChild("HumanoidRootPart")
+    local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(root, tweenInfo, {CFrame = cf})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- Saldırı fonksiyonu (silent, virtual user YOK)
+local function attackTarget(target)
+    local char = getChar()
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    for _, tool in pairs(char:GetChildren()) do
+        if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+            local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Activate")
+            if remote then
+                remote:FireServer({["MousePos"] = target.HumanoidRootPart.Position})
+            end
+        end
+    end
+    local combatRemote = char:FindFirstChild("CombatRemote") or char:FindFirstChild("MeleeRemote")
+    if combatRemote then
+        combatRemote:FireServer(target)
+    end
+end
+
+-- Kill Aura döngüsü (normal hızda)
+coroutine.wrap(function()
+    while task.wait(0.1) do
+        if killAura and not fastAttack then  -- fastAttack açıkken kill aura'yı ayrıca kullanma
+            local char = getChar()
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+            local enemies = {}
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
+                    local hum = obj:FindFirstChild("Humanoid")
+                    if hum and hum.Health > 0 then
+                        local hrp = obj:FindFirstChild("HumanoidRootPart")
+                        if hrp and (hrp.Position - root.Position).Magnitude <= 50 then
+                            table.insert(enemies, obj)
+                        end
+                    end
+                end
+            end
+            table.sort(enemies, function(a,b)
+                return (a.HumanoidRootPart.Position - root.Position).Magnitude < (b.HumanoidRootPart.Position - root.Position).Magnitude
+            end)
+            if #enemies > 0 then
+                attackTarget(enemies[1])
+            end
+        end
+    end
+end)()
+
+-- Fast Attack (Auto Click) döngüsü - çok daha hızlı, hedef sürekli saldırı
+coroutine.wrap(function()
+    while task.wait(0.01) do  -- milisaniyede 1 kez döngü
+        if fastAttack then
+            local char = getChar()
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+            -- Kill aura ile aynı hedef seçimi, ama sürekli
+            local enemies = {}
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
+                    local hum = obj:FindFirstChild("Humanoid")
+                    if hum and hum.Health > 0 then
+                        local hrp = obj:FindFirstChild("HumanoidRootPart")
+                        if hrp and (hrp.Position - root.Position).Magnitude <= 70 then  -- menzil biraz daha geniş
+                            table.insert(enemies, obj)
+                        end
+                    end
+                end
+            end
+            if #enemies > 0 then
+                -- En yakın düşmana sürekli saldır
+                table.sort(enemies, function(a,b)
+                    return (a.HumanoidRootPart.Position - root.Position).Magnitude < (b.HumanoidRootPart.Position - root.Position).Magnitude
+                end)
+                attackTarget(enemies[1])
+            end
+        end
+    end
+end)()
+
+-- Bring Mobs döngüsü (mobları çekme)
+coroutine.wrap(function()
+    while task.wait(0.1) do
+        if bringMobs then
+            local char = getChar()
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
+                    local hum = obj:FindFirstChild("Humanoid")
+                    local hrp = obj:FindFirstChild("HumanoidRootPart")
+                    if hum and hum.Health > 0 and hrp then
+                        hrp.CFrame = root.CFrame * CFrame.new(0,0,5)
+                    end
+                end
+            end
+        end
+    end
+end)()
+
+-- Auto Farm döngüsü (tween + otomatik tüm mekanikleri uygula)
+coroutine.wrap(function()
+    while task.wait(0.5) do
+        if autoFarm then
+            local targetPos = farmPositions[selectedFarm]
+            if not targetPos then continue end
+            tweenToCFrame(targetPos)
+            -- Bölgeye vardıktan sonra bekle ve saldırıları başlat (fastAttack veya killAura zaten arkaplanda çalışır)
+            task.wait(0.2)
+        end
+    end
+end)()
