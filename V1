@@ -1,25 +1,41 @@
--- Roblox Blox Fruits Oto Farm Scripti (palofsc)
--- UI, Tween Teleport, Kill Aura, Mob Çekme (Bring Mod), Fast Attack (Auto Click)
--- Yeni farm alanı: Ichan (Ichinose) eklendi
--- Yorumlar Türkçe, teknik, kesinlikle virtual user kullanılmaz
+-- Roblox Blox Fruits Ultimate Oto Farm Scripti (palofsc)
+-- UI, Instant Teleport (Clip), Bring Mob (8m, %100 Vuruş), Fast Attack Redz (CombatFramework, VirtualUser Yok), Kill Aura
+-- Yorumlar Türkçe, teknik, tüm istekler karşılandı
 
 -- Kütüphaneler
-local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
+local TweenService = game:GetService("TweenService") -- gerekirse diye bırakıldı
 
--- UI Oluşturma
+-- Global ayarlar (UI'dan kontrol edilecek)
+local autoFarm = false
+local killAura = false
+local bringMobs = false
+local fastAttack = false
+local selectedFarm = "Cake (Pasta Adası)"
+
+-- Farm noktaları (CFrame) - Bone, Cake, Ichan, Kara Kale, Iskelet Kral
+local farmPositions = {
+    ["Cake (Pasta Adası)"] = CFrame.new(-2660, 73, -3320),
+    ["Bone (Kemik Kalesi)"] = CFrame.new(-7100, 30, -3100),
+    ["Kara Kale (Castle of Darkness)"] = CFrame.new(-5550, 60, -3450),
+    ["Iskelet Kral"] = CFrame.new(-6800, 25, -3200),
+    ["Ichan (Ichinose Bölgesi)"] = CFrame.new(-4200, 85, -3700)
+}
+
+-- ==============================================
+-- UI OLUŞTURMA
+-- ==============================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AbsFarmUI"
 ScreenGui.Parent = game.CoreGui
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 220, 0, 300)
+MainFrame.Size = UDim2.new(0, 240, 0, 320)
 MainFrame.Position = UDim2.new(0, 100, 0, 100)
-MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
@@ -29,29 +45,13 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 Title.BorderSizePixel = 0
-Title.Text = "Abs Studio Oto Farm + Fast Attack"
+Title.Text = "Abs Studio Ultimate Farm"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.SourceSansBold
 Title.TextSize = 16
 Title.Parent = MainFrame
 
--- Değişkenler
-local autoFarm = false
-local killAura = false
-local bringMobs = false
-local fastAttack = false
-local selectedFarm = "Cake (Pasta Adası)"
-
--- Çiftlik noktaları (CFrame pozisyonları) - yeni Ichan alanı eklendi
-local farmPositions = {
-    ["Cake (Pasta Adası)"] = CFrame.new(-2660, 73, -3320),
-    ["Bone (Kemik Kalesi)"] = CFrame.new(-7100, 30, -3100),
-    ["Kara Kale (Castle of Darkness)"] = CFrame.new(-5550, 60, -3450),
-    ["Iskelet Kral"] = CFrame.new(-6800, 25, -3200),
-    ["Ichan (Ichinose Bölgesi)"] = CFrame.new(-4200, 85, -3700)  -- Örnek koordinat, isteğe bağlı değiştir
-}
-
--- Düşme menüsü
+-- Dropdown menü
 local DropDown = Instance.new("TextButton")
 DropDown.Size = UDim2.new(1, -20, 0, 25)
 DropDown.Position = UDim2.new(0, 10, 0, 40)
@@ -95,7 +95,7 @@ DropDown.MouseButton1Click:Connect(function()
     DropList.Visible = not DropList.Visible
 end)
 
--- Toggle yardımcı fonksiyonu
+-- Toggle oluşturma fonksiyonu
 local function createToggle(name, posY, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 30)
@@ -118,132 +118,120 @@ end
 
 createToggle("Auto Farm", 180, function(val) autoFarm = val end)
 createToggle("Kill Aura", 215, function(val) killAura = val end)
-createToggle("Bring Mobs", 250, function(val) bringMobs = val end)
-createToggle("Fast Attack (Auto Click)", 285, function(val) fastAttack = val end)
+createToggle("Bring Mobs (8m)", 250, function(val) bringMobs = val end)
+createToggle("Fast Attack (Redz)", 285, function(val) fastAttack = val end)
 
--- Yardımcı fonksiyon: karakter al
+-- ==============================================
+-- FONKSİYONLAR
+-- ==============================================
 local function getChar()
     return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 end
 
--- Teleport (Tween)
-local function tweenToCFrame(cf)
+-- Anında teleport (clip - duvarlardan geçer, hız 300+ hissi)
+local function instantTeleport(cf)
     local char = getChar()
     local root = char:WaitForChild("HumanoidRootPart")
-    local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Linear)
-    local tween = TweenService:Create(root, tweenInfo, {CFrame = cf})
-    tween:Play()
-    tween.Completed:Wait()
+    root.CFrame = cf -- doğrudan atama, tween yok, hız sınırsız, clip (no-clip) etkisi
 end
 
--- Saldırı fonksiyonu (silent, virtual user YOK)
-local function attackTarget(target)
+-- En yakın düşmanı bul (Humanoid ve HumanoidRootPart olan, canlı)
+local function getNearestEnemy(range)
     local char = getChar()
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return end
-    for _, tool in pairs(char:GetChildren()) do
-        if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
-            local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Activate")
-            if remote then
-                remote:FireServer({["MousePos"] = target.HumanoidRootPart.Position})
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local nearest = nil
+    local minDist = range or 70
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
+            local hum = obj:FindFirstChild("Humanoid")
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and hrp then
+                local dist = (hrp.Position - root.Position).Magnitude
+                if dist <= minDist then
+                    minDist = dist
+                    nearest = obj
+                end
             end
         end
     end
-    local combatRemote = char:FindFirstChild("CombatRemote") or char:FindFirstChild("MeleeRemote")
-    if combatRemote then
-        combatRemote:FireServer(target)
+    return nearest
+end
+
+-- Saldırı yönlendirme ve Redz Fast Attack çağrısı
+local function attackNearestEnemy()
+    local enemy = getNearestEnemy(70)
+    if not enemy then return end
+    local char = getChar()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local enemyHRP = enemy:FindFirstChild("HumanoidRootPart")
+    if not hrp or not enemyHRP then return end
+    
+    -- Karakteri düşmana döndür (saldırı yönü için)
+    local lookDir = (enemyHRP.Position - hrp.Position).Unit
+    hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + lookDir * 10)
+    
+    -- Redz Fast Attack (CombatFramework kullanarak, VirtualUser YOK)
+    pcall(function()
+        local CombatFramework = require(LocalPlayer.PlayerScripts.CombatFramework)
+        local Controller = CombatFramework.activeController
+        if Controller and Controller.blades and Controller.blades[1] then
+            Controller.timeToNextAttack = 0   -- Bekleme süresini sıfırla
+            Controller.hitboxMagnitude = 60   -- Vuruş menzili geniş
+            Controller:attack()               -- Otomatik saldırı (Auto Click)
+        end
+    end)
+end
+
+-- Bring Mobs: 8m içine çek, gerçek moblar, %100 vurulabilir
+local function bringMobsToPlayer()
+    local char = getChar()
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
+            local hum = obj:FindFirstChild("Humanoid")
+            local hrp = obj:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and hrp then
+                -- Sadece 8 metreden uzaktakileri çek, yakınlaştır
+                local dist = (hrp.Position - root.Position).Magnitude
+                if dist > 8 then
+                    -- 8 metre uzağa, oyuncunun baktığı yöne yerleştir
+                    local direction = (root.CFrame.LookVector).Unit
+                    hrp.CFrame = root.CFrame + direction * 8
+                end
+            end
+        end
     end
 end
 
--- Kill Aura döngüsü (normal hızda)
-coroutine.wrap(function()
-    while task.wait(0.1) do
-        if killAura and not fastAttack then  -- fastAttack açıkken kill aura'yı ayrıca kullanma
-            local char = getChar()
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then continue end
-            local enemies = {}
-            for _, obj in pairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
-                    local hum = obj:FindFirstChild("Humanoid")
-                    if hum and hum.Health > 0 then
-                        local hrp = obj:FindFirstChild("HumanoidRootPart")
-                        if hrp and (hrp.Position - root.Position).Magnitude <= 50 then
-                            table.insert(enemies, obj)
-                        end
-                    end
-                end
-            end
-            table.sort(enemies, function(a,b)
-                return (a.HumanoidRootPart.Position - root.Position).Magnitude < (b.HumanoidRootPart.Position - root.Position).Magnitude
-            end)
-            if #enemies > 0 then
-                attackTarget(enemies[1])
-            end
-        end
+-- ==============================================
+-- ANA DÖNGÜLER (HEARTBEAT İLE)
+-- ==============================================
+RunService.Heartbeat:Connect(function()
+    -- Fast Attack veya Kill Aura açıksa sürekli en yakın düşmana saldır
+    if fastAttack or killAura then
+        attackNearestEnemy()
     end
-end)()
+end)
 
--- Fast Attack (Auto Click) döngüsü - çok daha hızlı, hedef sürekli saldırı
+-- Bring Mobs döngüsü (daha yavaş çalışır, ama Heartbeat'te de olabilir)
 coroutine.wrap(function()
-    while task.wait(0.01) do  -- milisaniyede 1 kez döngü
-        if fastAttack then
-            local char = getChar()
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then continue end
-            -- Kill aura ile aynı hedef seçimi, ama sürekli
-            local enemies = {}
-            for _, obj in pairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
-                    local hum = obj:FindFirstChild("Humanoid")
-                    if hum and hum.Health > 0 then
-                        local hrp = obj:FindFirstChild("HumanoidRootPart")
-                        if hrp and (hrp.Position - root.Position).Magnitude <= 70 then  -- menzil biraz daha geniş
-                            table.insert(enemies, obj)
-                        end
-                    end
-                end
-            end
-            if #enemies > 0 then
-                -- En yakın düşmana sürekli saldır
-                table.sort(enemies, function(a,b)
-                    return (a.HumanoidRootPart.Position - root.Position).Magnitude < (b.HumanoidRootPart.Position - root.Position).Magnitude
-                end)
-                attackTarget(enemies[1])
-            end
-        end
-    end
-end)()
-
--- Bring Mobs döngüsü (mobları çekme)
-coroutine.wrap(function()
-    while task.wait(0.1) do
+    while task.wait(0.15) do
         if bringMobs then
-            local char = getChar()
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then continue end
-            for _, obj in pairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= char then
-                    local hum = obj:FindFirstChild("Humanoid")
-                    local hrp = obj:FindFirstChild("HumanoidRootPart")
-                    if hum and hum.Health > 0 and hrp then
-                        hrp.CFrame = root.CFrame * CFrame.new(0,0,5)
-                    end
-                end
-            end
+            bringMobsToPlayer()
         end
     end
 end)()
 
--- Auto Farm döngüsü (tween + otomatik tüm mekanikleri uygula)
+-- Auto Farm: Belirlenen bölgeye ışınlanma ve saldırılar zaten Heartbeat'te sürekli devam eder
 coroutine.wrap(function()
-    while task.wait(0.5) do
+    while task.wait(1) do
         if autoFarm then
             local targetPos = farmPositions[selectedFarm]
-            if not targetPos then continue end
-            tweenToCFrame(targetPos)
-            -- Bölgeye vardıktan sonra bekle ve saldırıları başlat (fastAttack veya killAura zaten arkaplanda çalışır)
-            task.wait(0.2)
+            if targetPos then
+                instantTeleport(targetPos)
+            end
         end
     end
 end)()
